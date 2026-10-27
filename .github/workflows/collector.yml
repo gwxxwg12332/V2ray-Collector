@@ -1,4 +1,4 @@
-name: Unified Collector (GH_TOKEN only, single manual run)
+name: Unified Collector (GitHub-first, Telegram optional)
 
 on:
   workflow_dispatch:
@@ -28,15 +28,19 @@ jobs:
       - name: Install dependencies
         run: pip install -r config/requirements.txt
 
-      - name: Run Telegram Collector (no token, t.me/s web)
-        run: python src/telegram_collector.py
-
-      - name: Run GitHub Collector
+      # 主力源优先：带 GH_TOKEN 搜索 GitHub 公开仓库，先出产物
+      - name: Run GitHub Collector (main source)
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           RUN_MODE: frequent
           MAX_AGE_HOURS: 0.5
         run: python src/collector_git.py
+
+      # 加分源后置：480 频道串行较慢，失败/超时不阻断主线
+      - name: Run Telegram Collector (optional, non-blocking)
+        continue-on-error: true
+        timeout-minutes: 12
+        run: python src/telegram_collector.py
 
       - name: Split joined proxy links
         run: |
@@ -70,8 +74,7 @@ jobs:
             git push
           fi
 
-      # 自动链式自触发默认关闭，避免免费 Actions 额度被无限循环消耗。
-      # 需要“持续每轮自动更新”时，取消下面这段注释即可（依赖 secrets.GH_TOKEN）：
+      # 自动链式自触发默认关闭；需要持续更新时取消注释（依赖 secrets.GH_TOKEN）：
       # - name: Trigger next run
       #   if: success()
       #   uses: actions/github-script@v7
@@ -79,8 +82,6 @@ jobs:
       #     github-token: ${{ secrets.GH_TOKEN }}
       #   script: |
       #     await github.rest.actions.createWorkflowDispatch({
-      #       owner: context.repo.owner,
-      #       repo: context.repo.repo,
-      #       workflow_id: 'collector.yml',
-      #       ref: 'main'
+      #       owner: context.repo.owner, repo: context.repo.repo,
+      #       workflow_id: 'collector.yml', ref: 'main'
       #     });
